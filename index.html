@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gewicht-Tracker (Firebase)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    :root{ --bg:#eef2f7; --card:#fff; --text:#1f2937; --me:#2563eb; --col:#16a34a; --muted:#cbd5e1; --me-soft:#93c5fd; --col-soft:#86efac;}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px}
+    h1{margin:0 0 18px;text-align:center}
+    .container{max-width:980px;margin:0 auto;display:grid;gap:18px}
+    .card{background:var(--card);border-radius:14px;box-shadow:0 6px 20px rgba(2,6,23,.06);padding:18px}
+    .grid{display:grid;gap:14px}.grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}@media(max-width:760px){.grid-2{grid-template-columns:1fr}}
+    .person h3{margin:0 0 8px}label{display:block;font-size:12px;color:#475569;margin-bottom:6px}
+    input{width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;outline:none;background:#f8fafc}
+    input:focus{border-color:#94a3b8;background:#fff}
+    .row{display:flex;gap:10px}.row>*{flex:1}
+    .btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border:none;border-radius:10px;font-weight:600;cursor:pointer;background:#111827;color:#fff}
+    .btn:hover{opacity:.92}
+    .legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:14px;margin-top:8px}.dot{width:10px;height:10px;border-radius:50%}.dash{width:18px;height:0;border-top:2px dashed #0ea5e9;display:inline-block;margin-right:6px}
+    .chart-wrap{height:360px}
+    .progress-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}@media(max-width:760px){.progress-grid{grid-template-columns:1fr}}
+    .centerpct{margin-top:-10px;text-align:center;font-weight:700}.muted{color:#64748b;font-size:13px}
+  </style>
+</head>
+<body>
+  <h1>Gewicht-Tracker</h1>
+  <div class="container">
+    <!-- Eingaben -->
+    <div class="card grid grid-2">
+      <div class="person">
+        <h3>Du</h3>
+        <div class="row">
+          <div><label>Heutiges Gewicht (kg)</label><input type="number" step="0.1" id="meWeight" placeholder="z. B. 82.4" /></div>
+          <div><label>Zielgewicht (kg)</label><input type="number" step="0.1" id="meGoal" placeholder="z. B. 75" /></div>
+        </div>
+        <button class="btn" id="saveMe">Speichern</button>
+      </div>
+      <div class="person">
+        <h3>Kollege</h3>
+        <div class="row">
+          <div><label>Heutiges Gewicht (kg)</label><input type="number" step="0.1" id="colWeight" placeholder="z. B. 93.2" /></div>
+          <div><label>Zielgewicht (kg)</label><input type="number" step="0.1" id="colGoal" placeholder="z. B. 85" /></div>
+        </div>
+        <button class="btn" id="saveCol">Speichern</button>
+      </div>
+    </div>
+
+    <!-- Liniengraph -->
+    <div class="card">
+      <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
+      <div class="legend">
+        <span class="dot" style="background:var(--me)"></span> Du
+        <span class="dot" style="background:var(--col)"></span> Kollege
+        <span class="dash"></span> Ziel-Linien
+      </div>
+      <div class="muted">Tipp: Tageswert wird überschrieben (saubere Kurve). Live-Sync per Firebase.</div>
+    </div>
+
+    <!-- Fortschritt -->
+    <div class="card progress-grid">
+      <div><canvas id="meProgress" height="220"></canvas><div id="mePct" class="centerpct">0%</div></div>
+      <div><canvas id="colProgress" height="220"></canvas><div id="colPct" class="centerpct">0%</div></div>
+    </div>
+  </div>
+
+  <!-- Firebase + App Code -->
+  <script type="module">
+    // ---- Firebase SDK ----
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+    import {
+      initializeFirestore,
+      doc, setDoc, onSnapshot, collection, query, orderBy, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+
+    // >>>> Deine Config hier einsetzen (aus Firebase Console kopieren)
+    const firebaseConfig = {
+      apiKey: "AIzaSyBSjgdQAnT3Bz9iojou02KIT1Csx-CQ74k",
+        authDomain: "weighttracker-35b96.firebaseapp.com",
+        projectId: "weighttracker-35b96",
+        storageBucket: "weighttracker-35b96.firebasestorage.app",
+        messagingSenderId: "676669952179",
+        appId: "1:676669952179:web:e0b1747973ecab9b81e0c6",
+        measurementId: "G-1EC00GJ8NN"
+    };
+
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    // Firestore mit LongPolling (verhindert Blocker-Fehler)
+    const db   = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+
+    // Anonym einloggen
+    signInAnonymously(auth).catch(console.error);
+
+    // ---- Charts Setup ----
+    const lineCtx   = document.getElementById('lineChart').getContext('2d');
+    const meProgCtx = document.getElementById('meProgress').getContext('2d');
+    const colProgCtx= document.getElementById('colProgress').getContext('2d');
+
+    let lineChart, meProgress, colProgress;
+    const CenterText = {
+      id:'centerText',
+      afterDraw(chart, args, opts){
+        const {ctx, chartArea:{width,height}} = chart;
+        ctx.save(); ctx.font='600 22px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#0f172a';
+        ctx.fillText(opts.text || '0%', width/2, height/2); ctx.restore();
+      }
+    };
+    Chart.register(CenterText);
+
+    const store = { data:{me:{}, col:{}}, goals:{me:75, col:85} };
+
+    function formatDE(iso){ const [y,m,d]=iso.split('-'); return `${d}.${m}.${y}`; }
+    function sortedDates(){
+      const set = new Set([...Object.keys(store.data.me), ...Object.keys(store.data.col)]);
+      return [...set].sort();
+    }
+    function progressFor(person){
+      const rec = store.data[person];
+      const dates = Object.keys(rec).sort();
+      if(dates.length===0) return { pct:0 };
+      const start = rec[dates[0]], now = rec[dates[dates.length-1]], goal = store.goals[person];
+      if(goal===start) return { pct:100 };
+      const span = Math.abs(goal - start); if(span===0) return { pct:0 };
+      const moved = (goal < start) ? (start - now) : (now - start);
+      return { pct: Math.max(0, Math.min(100, (moved/span)*100)) };
+    }
+
+    function redraw(){
+      const dates = sortedDates();
+      const labels = dates.map(formatDE);
+      const meData = dates.map(d => store.data.me[d] ?? null);
+      const colData= dates.map(d => store.data.col[d] ?? null);
+
+      if(lineChart) lineChart.destroy();
+      lineChart = new Chart(lineCtx, {
+        type:'line',
+        data:{ labels, datasets:[
+          { label:'Du', data:meData, borderColor:getCSS('--me'), pointBorderColor:getCSS('--me'), pointBackgroundColor:'white', pointRadius:3, borderWidth:2, cubicInterpolationMode:'monotone', tension:.3, spanGaps:true },
+          { label:'Kollege', data:colData, borderColor:getCSS('--col'), pointBorderColor:getCSS('--col'), pointBackgroundColor:'white', pointRadius:3, borderWidth:2, cubicInterpolationMode:'monotone', tension:.3, spanGaps:true },
+          { label:'Ziel Du', data:dates.map(()=>store.goals.me), borderColor:getCSS('--me-soft'), borderDash:[6,6], pointRadius:0, borderWidth:2 },
+          { label:'Ziel Kollege', data:dates.map(()=>store.goals.col), borderColor:getCSS('--col-soft'), borderDash:[6,6], pointRadius:0, borderWidth:2 },
+        ]},
+        options:{ maintainAspectRatio:false, interaction:{intersect:false,mode:'index'},
+          plugins:{legend:{display:true}, tooltip:{callbacks:{label:(c)=>`${c.dataset.label}: ${c.parsed.y ?? '-'} kg`}}},
+          scales:{ x:{title:{display:true,text:'Datum'}}, y:{title:{display:true,text:'kg'}, ticks:{precision:0} } }
+        }
+      });
+
+      const m = progressFor('me'), c = progressFor('col');
+      if(meProgress) meProgress.destroy();
+      meProgress = new Chart(meProgCtx, {
+        type:'doughnut',
+        data:{ labels:['Fortschritt','Rest'], datasets:[{ data:[m.pct, 100-m.pct], backgroundColor:[getCSS('--me'), getCSS('--muted')], borderWidth:0 }] },
+        options:{ cutout:'72%', plugins:{legend:{display:false},tooltip:{enabled:false}} },
+        plugins:[{...CenterText, afterDraw:(ch)=>CenterText.afterDraw(ch,null,{text:`${Math.round(m.pct)}%`})}]
+      });
+      document.getElementById('mePct').textContent = `${Math.round(m.pct)}%`;
+
+      if(colProgress) colProgress.destroy();
+      colProgress = new Chart(colProgCtx, {
+        type:'doughnut',
+        data:{ labels:['Fortschritt','Rest'], datasets:[{ data:[c.pct, 100-c.pct], backgroundColor:[getCSS('--col'), getCSS('--muted')], borderWidth:0 }] },
+        options:{ cutout:'72%', plugins:{legend:{display:false},tooltip:{enabled:false}} },
+        plugins:[{...CenterText, afterDraw:(ch)=>CenterText.afterDraw(ch,null,{text:`${Math.round(c.pct)}%`})}]
+      });
+      document.getElementById('colPct').textContent = `${Math.round(c.pct)}%`;
+    }
+
+    function getCSS(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+    function toISO(d){ const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`; }
+
+    // ---- Firestore Live Updates ----
+    onSnapshot(doc(db,'goals','me'), snap => { if(snap.exists()){ store.goals.me = Number(snap.data().goal); document.getElementById('meGoal').value=store.goals.me; redraw(); } });
+    onSnapshot(doc(db,'goals','col'), snap => { if(snap.exists()){ store.goals.col = Number(snap.data().goal); document.getElementById('colGoal').value=store.goals.col; redraw(); } });
+    onSnapshot(query(collection(db,'weights'), orderBy('date')), (qs)=>{
+      store.data.me={}; store.data.col={};
+      qs.forEach(docSnap=>{
+        const d=docSnap.data(); const date=String(d.date).slice(0,10); const person=d.person;
+        if(!date||!person) return;
+        if(d.weight!=null&&d.weight!==""){ store.data[person][date]=Number(d.weight); }
+      });
+      redraw();
+    });
+
+    // ---- Speichern ----
+    document.getElementById('saveMe').addEventListener('click',()=>save('me'));
+    document.getElementById('saveCol').addEventListener('click',()=>save('col'));
+
+    async function save(person){
+      const wInput=document.getElementById(person==='me'?'meWeight':'colWeight');
+      const gInput=document.getElementById(person==='me'?'meGoal':'colGoal');
+      const weight=wInput.value?parseFloat(wInput.value):null;
+      const goal=gInput.value?parseFloat(gInput.value):null;
+      const date=toISO(new Date());
+      const ops=[];
+      if(weight!==null&&!Number.isNaN(weight)){
+        const id=`${date}_${person}`;
+        ops.push(setDoc(doc(db,'weights',id),{date,person,weight,ts:serverTimestamp()},{merge:true}));
+        wInput.value='';
+      }
+      if(goal!==null&&!Number.isNaN(goal)){
+        ops.push(setDoc(doc(db,'goals',person),{goal},{merge:true}));
+      }
+      if(ops.length===0){ alert('Bitte Gewicht oder Ziel eintragen.'); return; }
+      await Promise.all(ops);
+    }
+
+    // ---- Start ----
+    onAuthStateChanged(auth,()=>{ redraw(); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+:root {
+    --bg: #3c3c3c;
+    --card: #323232;
+    --text: #ffffff;
+    --me: #2563eb;
+    --col: #16a34a;
+    --muted: #cbd5e1;
+    --me-soft: #93c5fd;
+    --col-soft: #86efac;
+}
+
+* {
+    box-sizing: border-box
+}
+
+body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px
+}
+
+h1 {
+    margin: 0 0 18px;
+    text-align: center;
+    color: white;
+    font-size: 80px;
+    text-shadow: 0px 4px 15px hsla(0, 0%, 100%, 0.575);
+}
+
+.container {
+    max-width: 980px;
+    margin: 0 auto;
+    display: grid;
+    gap: 18px
+}
+
+.card {
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: 0px 6px 20px rgb(0, 0, 0);
+    padding: 18px
+}
+
+.grid {
+    display: grid;
+    gap: 14px
+}
+
+.grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr))
+}
+
+@media(max-width:760px) {
+    .grid-2 {
+        grid-template-columns: 1fr
+    }
+}
+
+.person h3 {
+    margin: 0 0 8px
+}
+
+label {
+    display: block;
+    font-size: 12px;
+    color: #ffffff;
+    margin-bottom: 6px
+}
+
+input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    outline: none;
+    background: #f8fafc
+}
+
+input:focus {
+    border-color: #94a3b8;
+    background: #fff
+}
+
+.row {
+    display: flex;
+    gap: 10px
+}
+
+.row>* {
+    flex: 1
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 12px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #111827;
+    color: #fff;
+    margin-top: 10px;
+}
+
+.btn:hover {
+    opacity: .92
+}
+
+.legend {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 14px;
+    margin-top: 8px
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%
+}
+
+.dash {
+    width: 18px;
+    height: 0;
+    border-top: 2px dashed #0ea5e9;
+    display: inline-block;
+    margin-right: 6px
+}
+
+.chart-wrap {
+    height: 360px
+}
